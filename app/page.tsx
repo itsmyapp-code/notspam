@@ -436,8 +436,8 @@ export default function CleanRoomPage() {
         {/* DUAL SPLIT PANE */}
         <div className="hidden lg:grid grid-cols-[1fr_2fr] gap-3 flex-1 min-h-0">
           <aside className="flex flex-col rounded-2xl overflow-hidden bg-slate-950 border border-slate-800">
-            <div className="shrink-0 flex items-center justify-between px-5 py-3.5 border-b border-slate-800">
-              <div className="flex items-center gap-2">
+            <div className="shrink-0 flex items-center justify-between px-8 py-3.5 border-b border-slate-800">
+              <div className="flex items-center gap-3">
                 <span className="text-sm font-semibold text-slate-100">Inbox</span>
                 <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500">
                   {messages.length}
