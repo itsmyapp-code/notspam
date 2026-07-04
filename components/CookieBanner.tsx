@@ -21,7 +21,7 @@ export default function CookieBanner() {
         boxShadow: '0 -4px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(16,185,129,0.05)',
       }}
     >
-      <div className="px-8 py-4 flex flex-row items-center justify-between gap-8">
+      <div className="px-12 py-6 flex flex-row items-center justify-between gap-8">
         <div className="flex-1 min-w-0">
           <p className="text-[--color-text-primary] text-sm font-semibold mb-1">
             Privacy Notice

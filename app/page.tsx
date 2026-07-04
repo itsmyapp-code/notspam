@@ -394,10 +394,10 @@ export default function CleanRoomPage() {
       <div className="flex flex-col gap-4 w-full max-w-[1200px] h-[calc(100vh-160px)] min-h-[600px] max-h-[900px]">
 
         {/* HEADER */}
-        <header className="shrink-0 flex items-center justify-between px-6 py-5 rounded-2xl bg-slate-950 border border-slate-800">
-          <div className="flex items-center gap-4">
-            <Image src="/icons/notspam.png" alt="NOTSPAM Shield" width={48} height={48} priority className="object-contain" />
-            <h1 className="text-3xl font-black tracking-tight">
+        <header className="shrink-0 flex items-center justify-between px-8 py-6 rounded-2xl bg-slate-950 border border-slate-800">
+          <div className="flex items-center gap-6">
+            <Image src="/icons/notspam.png" alt="NOTSPAM Shield" width={96} height={96} priority className="object-contain" />
+            <h1 className="text-5xl font-black tracking-tight">
               <span className="text-emerald-500">NOTSPAM</span>
               <span className="text-slate-400 font-normal">.uk</span>
             </h1>
@@ -482,9 +482,9 @@ export default function CleanRoomPage() {
         {/* DUAL SPLIT PANE */}
         <div className="hidden lg:grid grid-cols-[1fr_2fr] gap-3 flex-1 min-h-0">
           <aside className="flex flex-col rounded-2xl overflow-hidden bg-slate-950 border border-slate-800">
-            <div className="shrink-0 flex items-center justify-between px-8 py-3.5 border-b border-slate-800">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-semibold text-slate-100">Inbox</span>
+            <div className="shrink-0 flex items-center justify-between px-12 py-5 border-b border-slate-800">
+              <div className="flex items-center gap-4">
+                <span className="text-lg font-bold text-slate-100">Inbox</span>
                 <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500">
                   {messages.length}
                 </span>
