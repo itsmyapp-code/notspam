@@ -27,6 +27,8 @@ const POLL_INTERVAL_MS = 10_000
 const ADDRESS_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789'
 const ADDRESS_LENGTH = 10
 
+const getPasswordForAddress = (address: string) => `${address}-notspam-secure-2026`
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function generateRandomString(length: number): string {
@@ -91,39 +93,64 @@ export default function CleanRoomPage() {
     return data['hydra:member'][0].domain
   }
 
-  // 1. Auth (Create anonymous ephemeral account)
-  const setupAccount = useCallback(async () => {
+  // Write address into the URL so the page is bookmarkable
+  const setAddressWithUrl = useCallback((newAddress: string) => {
+    setAddress(newAddress)
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href)
+      url.searchParams.set('id', newAddress.split('@')[0])
+      window.history.replaceState(null, '', url.toString())
+    }
+  }, [])
+
+  // 1. Auth (Create or login to ephemeral account)
+  const setupAccount = useCallback(async (existingId?: string) => {
     setIsLoading(true)
     setError(null)
     try {
       const domain = await getActiveDomain()
-      const username = generateRandomString(ADDRESS_LENGTH)
-      const password = generateRandomString(16) // Strong random password
+      const username = existingId || generateRandomString(ADDRESS_LENGTH)
       const fullAddress = `${username}@${domain}`
+      const password = getPasswordForAddress(fullAddress)
       
-      const createRes = await fetch(`${API_BASE}/accounts`, {
+      // Try to login first (if returning)
+      const loginRes = await fetch(`${API_BASE}/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ address: fullAddress, password })
       })
-      
-      if (!createRes.ok) {
-        throw new Error('Failed to create account on the Mail.tm network')
+
+      let jwt = ''
+      if (loginRes.ok) {
+        const data = await loginRes.json()
+        jwt = data.token
+      } else {
+        // If login fails, create the account
+        const createRes = await fetch(`${API_BASE}/accounts`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address: fullAddress, password })
+        })
+        
+        if (!createRes.ok) {
+          throw new Error('Failed to create account on the Mail.tm network')
+        }
+        
+        // Get JWT Token after creation
+        const tokenRes = await fetch(`${API_BASE}/token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address: fullAddress, password })
+        })
+        
+        if (!tokenRes.ok) throw new Error('Failed to acquire token after creation')
+        const data = await tokenRes.json()
+        jwt = data.token
       }
       
-      // Get JWT Token
-      const tokenRes = await fetch(`${API_BASE}/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address: fullAddress, password })
-      })
-      
-      if (!tokenRes.ok) throw new Error('Failed to acquire token after creation')
-      const { token: jwt } = await tokenRes.json()
-      
-      // Set completely ephemeral state
+      // Set state
       setToken(jwt)
-      setAddress(fullAddress)
+      setAddressWithUrl(fullAddress)
       setMessages([])
       setSelectedMessage(null)
       setNewMessageIds(new Set())
@@ -135,7 +162,7 @@ export default function CleanRoomPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [setAddressWithUrl])
 
   // Fetch Messages
   const fetchMessages = useCallback(async (jwt: string) => {
@@ -210,9 +237,16 @@ export default function CleanRoomPage() {
     return () => { if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null } }
   }, [token, isPolling, fetchMessages])
 
-  // Boot sequence (No URL persistence, pure ephemeral)
+  // Boot sequence (Check for ?id= URL parameter)
   useEffect(() => {
-    setupAccount()
+    if (typeof window !== 'undefined') {
+      const urlId = new URLSearchParams(window.location.search).get('id')
+      if (urlId && /^[a-z0-9]{10}$/.test(urlId)) {
+        setupAccount(urlId)
+      } else {
+        setupAccount() // Generate new
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -281,12 +315,12 @@ export default function CleanRoomPage() {
   )
 
   const readerContent = isLoadingContent ? (
-    <div className="flex flex-col items-center justify-center h-full gap-4">
+    <div className="flex flex-col items-center justify-center h-full gap-4 print:hidden">
       <div className="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin border-emerald-500" />
       <p className="text-sm text-slate-400">Loading message…</p>
     </div>
   ) : !selectedMessage ? (
-    <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-8">
+    <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-8 print:hidden">
       <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-slate-800/50 border border-dashed border-slate-700">
         <svg className="w-8 h-8 text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1">
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -299,20 +333,32 @@ export default function CleanRoomPage() {
     </div>
   ) : (
     <>
-      <div className="shrink-0 px-5 py-4 border-b border-slate-800">
-        <h2 className="text-base font-semibold mb-3 leading-tight text-slate-100">
-          {selectedMessage.subject || '(no subject)'}
-        </h2>
-        <div className="grid grid-cols-[48px_1fr] gap-x-3 gap-y-1 text-xs">
+      <div className="shrink-0 px-5 py-4 border-b border-slate-800 print:border-b-0 print:p-0 print:mb-4">
+        <div className="flex items-start justify-between gap-4 mb-3">
+          <h2 className="text-base font-semibold leading-tight text-slate-100 print:text-black">
+            {selectedMessage.subject || '(no subject)'}
+          </h2>
+          <button
+            onClick={() => window.print()}
+            className="print:hidden shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-emerald-500 hover:bg-slate-800 transition-colors border border-slate-700"
+            title="Print to PDF"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+            </svg>
+            <span>Print</span>
+          </button>
+        </div>
+        <div className="grid grid-cols-[48px_1fr] gap-x-3 gap-y-1 text-xs print:text-sm">
           <span className="text-slate-500">From</span>
-          <span className="truncate text-cyan-400">{selectedMessage.from.address}</span>
+          <span className="truncate text-cyan-400 print:text-blue-600">{selectedMessage.from.address}</span>
           <span className="text-slate-500">To</span>
-          <span className="truncate text-slate-300 font-mono">{address}</span>
+          <span className="truncate text-slate-300 font-mono print:text-black">{address}</span>
           <span className="text-slate-500">Date</span>
-          <span className="text-slate-400">{formatDate(selectedMessage.createdAt)}</span>
+          <span className="text-slate-400 print:text-black">{formatDate(selectedMessage.createdAt)}</span>
         </div>
         {selectedMessage.attachments && selectedMessage.attachments.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap gap-2 print:hidden">
             {selectedMessage.attachments.map((att, idx) => (
               <span key={idx} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs bg-slate-800 border border-slate-700 text-slate-300">
                 📎 <span className="truncate max-w-[120px]">{att.filename}</span>
@@ -322,17 +368,17 @@ export default function CleanRoomPage() {
           </div>
         )}
       </div>
-      <div className="flex-1 overflow-hidden min-h-0 bg-white">
+      <div className="flex-1 overflow-hidden min-h-0 bg-white print:overflow-visible">
         {selectedMessage.html && selectedMessage.html.length > 0 ? (
           <iframe
             title="Message content"
             srcDoc={selectedMessage.html[0]}
             sandbox="allow-same-origin"
-            className="w-full h-full border-0"
+            className="w-full h-full border-0 print:h-auto print:min-h-screen"
           />
         ) : (
-          <div className="h-full overflow-y-auto p-5 bg-slate-950">
-            <pre className="text-sm leading-relaxed whitespace-pre-wrap break-words font-mono text-slate-300">
+          <div className="h-full overflow-y-auto p-5 bg-slate-950 print:bg-white print:overflow-visible">
+            <pre className="text-sm leading-relaxed whitespace-pre-wrap break-words font-mono text-slate-300 print:text-black">
               {selectedMessage.text || '(empty message body)'}
             </pre>
           </div>
