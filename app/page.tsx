@@ -237,7 +237,7 @@ export default function CleanRoomPage() {
           
           if (imageBlobs.size > 0) {
             // Aggressively replace any cid: references
-            htmlContent = htmlContent.replace(/cid:([^"'\s>]+)/g, (match, cid) => {
+            htmlContent = htmlContent.replace(/cid:([^"'\s>]+)/g, (match: string, cid: string) => {
               const cleanCid = cid.replace(/[<>]/g, '')
               if (imageBlobs.has(cleanCid)) return imageBlobs.get(cleanCid)!
               // Fallback to first image if no exact match (Mail.tm often strips CIDs)
