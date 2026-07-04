@@ -80,6 +80,7 @@ export default function CleanRoomPage() {
   const [newMessageIds, setNewMessageIds] = useState<Set<string>>(new Set())
   const [mobileTab, setMobileTab] = useState<'inbox' | 'reader'>('inbox')
 
+  const iframeRef = useRef<HTMLIFrameElement>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const isFetchingRef = useRef<boolean>(false)
   const prevMessageIdsRef = useRef<Set<string>>(new Set())
@@ -206,7 +207,33 @@ export default function CleanRoomPage() {
         cache: 'no-store'
       })
       if (!res.ok) throw new Error(`API status ${res.status}`)
-      setSelectedMessage(await res.json())
+      const msgData = await res.json()
+      
+      // Load inline images (CIDs)
+      let htmlContent = msgData.html && msgData.html.length > 0 ? msgData.html[0] : ''
+      if (htmlContent && msgData.attachments && msgData.attachments.length > 0) {
+        for (const att of msgData.attachments) {
+          const cidMatch = att.contentId || att.cid || att.id
+          if (cidMatch && htmlContent.includes(`cid:${cidMatch}`)) {
+            try {
+              // Mail.tm API uses /messages/{id}/attachment/{attachmentId} or similar to download
+              const attRes = await fetch(`${API_BASE}/messages/${id}/attachment/${att.id}`, { 
+                headers: { Authorization: `Bearer ${jwt}` } 
+              })
+              if (attRes.ok) {
+                const blob = await attRes.blob()
+                const url = URL.createObjectURL(blob)
+                htmlContent = htmlContent.replace(new RegExp(`cid:${cidMatch}`, 'g'), url)
+              }
+            } catch (e) {
+              console.error('Failed to load inline image', e)
+            }
+          }
+        }
+        msgData.html[0] = htmlContent
+      }
+      
+      setSelectedMessage(msgData)
     } catch (err) {
       console.error(err)
     } finally {
@@ -335,11 +362,17 @@ export default function CleanRoomPage() {
     <>
       <div className="shrink-0 px-5 py-4 border-b border-slate-800 print:border-b-0 print:p-0 print:mb-4">
         <div className="flex items-start justify-between gap-4 mb-3">
-          <h2 className="text-base font-semibold leading-tight text-slate-100 print:text-black">
+          <h2 className="text-base font-semibold leading-tight text-slate-100">
             {selectedMessage.subject || '(no subject)'}
           </h2>
           <button
-            onClick={() => window.print()}
+            onClick={() => {
+              if (iframeRef.current?.contentWindow) {
+                iframeRef.current.contentWindow.print()
+              } else {
+                window.print()
+              }
+            }}
             className="print:hidden shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-emerald-500 hover:bg-slate-800 transition-colors border border-slate-700"
             title="Print to PDF"
           >
@@ -368,11 +401,26 @@ export default function CleanRoomPage() {
           </div>
         )}
       </div>
-      <div className="flex-1 overflow-hidden min-h-0 bg-white print:overflow-visible">
+      <div className="flex-1 overflow-hidden min-h-0 bg-white">
         {selectedMessage.html && selectedMessage.html.length > 0 ? (
           <iframe
+            ref={iframeRef}
             title="Message content"
-            srcDoc={selectedMessage.html[0]}
+            srcDoc={`
+              <style>
+                .print-only-header { display: none; }
+                @media print {
+                  .print-only-header { display: block; font-family: sans-serif; padding-bottom: 20px; border-bottom: 2px solid #ccc; margin-bottom: 20px; }
+                }
+              </style>
+              <div class="print-only-header">
+                <h2 style="margin:0 0 10px 0;">${selectedMessage.subject || '(no subject)'}</h2>
+                <p style="margin: 2px 0; color: #333;"><strong>From:</strong> ${selectedMessage.from.address}</p>
+                <p style="margin: 2px 0; color: #333;"><strong>To:</strong> ${address}</p>
+                <p style="margin: 2px 0; color: #333;"><strong>Date:</strong> ${formatDate(selectedMessage.createdAt)}</p>
+              </div>
+              ${selectedMessage.html[0]}
+            `}
             sandbox="allow-same-origin"
             className="w-full h-full border-0 print:h-auto print:min-h-screen"
           />
@@ -482,7 +530,7 @@ export default function CleanRoomPage() {
         {/* DUAL SPLIT PANE */}
         <div className="hidden lg:grid grid-cols-[1fr_2fr] gap-3 flex-1 min-h-0">
           <aside className="flex flex-col rounded-2xl overflow-hidden bg-slate-950 border border-slate-800">
-            <div className="shrink-0 flex items-center justify-between px-12 py-5 border-b border-slate-800">
+            <div className="shrink-0 flex items-center justify-between py-5 border-b border-slate-800" style={{ paddingLeft: '3rem', paddingRight: '3rem' }}>
               <div className="flex items-center gap-4">
                 <span className="text-lg font-bold text-slate-100">Inbox</span>
                 <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500">
