@@ -212,18 +212,31 @@ export default function CleanRoomPage() {
       // Load inline images (CIDs)
       let htmlContent = msgData.html && msgData.html.length > 0 ? msgData.html[0] : ''
       if (htmlContent && msgData.attachments && msgData.attachments.length > 0) {
-        for (const att of msgData.attachments) {
-          const cidMatch = att.contentId || att.cid || att.id
-          if (cidMatch && htmlContent.includes(`cid:${cidMatch}`)) {
+        // Find all cid: occurrences in the HTML
+        const cidRegex = /cid:([^"'\s>]+)/g;
+        let match;
+        const cidsToReplace = new Set<string>();
+        while ((match = cidRegex.exec(htmlContent)) !== null) {
+          cidsToReplace.add(match[1]);
+        }
+
+        for (const cid of cidsToReplace) {
+          // Find the matching attachment (by contentId, cid, filename, or id)
+          const att = msgData.attachments.find((a: any) => 
+            a.contentId === cid || a.contentId === `<${cid}>` || a.cid === cid || a.filename === cid || a.id === cid
+          );
+          
+          if (att) {
             try {
-              // Mail.tm API uses /messages/{id}/attachment/{attachmentId} or similar to download
-              const attRes = await fetch(`${API_BASE}/messages/${id}/attachment/${att.id}`, { 
+              const urlPath = att.downloadUrl || `/messages/${id}/attachment/${att.id}`
+              const attRes = await fetch(`${API_BASE}${urlPath}`, { 
                 headers: { Authorization: `Bearer ${jwt}` } 
               })
               if (attRes.ok) {
                 const blob = await attRes.blob()
                 const url = URL.createObjectURL(blob)
-                htmlContent = htmlContent.replace(new RegExp(`cid:${cidMatch}`, 'g'), url)
+                // Replace all instances of this cid
+                htmlContent = htmlContent.replace(new RegExp(`cid:${cid}`, 'g'), url)
               }
             } catch (e) {
               console.error('Failed to load inline image', e)
@@ -249,7 +262,8 @@ export default function CleanRoomPage() {
 
   const downloadAttachment = useCallback(async (jwt: string, msgId: string, att: any) => {
     try {
-      const attRes = await fetch(`${API_BASE}/messages/${msgId}/attachment/${att.id}`, { 
+      const urlPath = att.downloadUrl || `/messages/${msgId}/attachment/${att.id}`
+      const attRes = await fetch(`${API_BASE}${urlPath}`, { 
         headers: { Authorization: `Bearer ${jwt}` } 
       })
       if (!attRes.ok) throw new Error('Download failed')
@@ -447,7 +461,7 @@ export default function CleanRoomPage() {
               </div>
               ${selectedMessage.html[0]}
             `}
-            sandbox="allow-same-origin"
+            sandbox="allow-same-origin allow-scripts allow-modals"
             className="w-full h-full border-0 print:h-auto print:min-h-screen"
           />
         ) : (
