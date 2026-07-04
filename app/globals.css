@@ -38,7 +38,6 @@
 }
 
 html {
-  min-width: 1280px;
   scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -49,7 +48,6 @@ body {
   color: var(--color-text-primary);
   font-family: var(--font-ui);
   min-height: 100vh;
-  overflow-x: hidden;
   /* Subtle noise texture */
   background-image: radial-gradient(
     ellipse 80% 50% at 50% -20%,
