@@ -1,0 +1,77 @@
+@import 'tailwindcss';
+
+@theme {
+  /* ── Brand Palette (notspam.uk brand guide) ── */
+  --color-bg-base:       #0b0f1a;
+  --color-bg-panel:      #111827;
+  --color-bg-card:       #1a2035;
+  --color-bg-elevated:   #1e2a42;
+  --color-bg-input:      #0d1117;
+
+  --color-emerald:       #10b981;
+  --color-emerald-dark:  #059669;
+  --color-emerald-glow:  rgba(16, 185, 129, 0.15);
+  --color-cyan:          #22d3ee;
+  --color-cyan-dim:      #0891b2;
+
+  --color-border:        rgba(255, 255, 255, 0.07);
+  --color-border-hover:  rgba(255, 255, 255, 0.14);
+  --color-border-active: rgba(16, 185, 129, 0.4);
+
+  --color-text-primary:  #f0f6fc;
+  --color-text-secondary:#8b949e;
+  --color-text-muted:    #484f58;
+  --color-danger:        #f85149;
+
+  /* ── Fonts ── */
+  --font-display: 'Montserrat', sans-serif;
+  --font-ui:      'Inter', sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  min-width: 1280px;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: var(--color-bg-base);
+  color: var(--color-text-primary);
+  font-family: var(--font-ui);
+  min-height: 100vh;
+  overflow-x: hidden;
+  /* Subtle noise texture */
+  background-image: radial-gradient(
+    ellipse 80% 50% at 50% -20%,
+    rgba(16, 185, 129, 0.06),
+    transparent
+  );
+}
+
+::selection {
+  background-color: var(--color-emerald);
+  color: #0b0f1a;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-emerald);
+}
