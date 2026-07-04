@@ -80,7 +80,6 @@ export default function CleanRoomPage() {
   const [newMessageIds, setNewMessageIds] = useState<Set<string>>(new Set())
   const [mobileTab, setMobileTab] = useState<'inbox' | 'reader'>('inbox')
 
-  const iframeRef = useRef<HTMLIFrameElement>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const isFetchingRef = useRef<boolean>(false)
   const prevMessageIdsRef = useRef<Set<string>>(new Set())
@@ -236,12 +235,12 @@ export default function CleanRoomPage() {
           }
           
           if (imageBlobs.size > 0) {
-            // Aggressively replace any cid: references
-            htmlContent = htmlContent.replace(/cid:([^"'\s>]+)/g, (match: string, cid: string) => {
+            // Aggressively replace ANY src attribute that is a cid or relative path
+            htmlContent = htmlContent.replace(/src=["'](?:cid:)?([^"']+)["']/gi, (match: string, cid: string) => {
+              if (match.toLowerCase().includes('http')) return match; // Leave external images alone
               const cleanCid = cid.replace(/[<>]/g, '')
-              if (imageBlobs.has(cleanCid)) return imageBlobs.get(cleanCid)!
-              // Fallback to first image if no exact match (Mail.tm often strips CIDs)
-              return Array.from(imageBlobs.values())[0] || match
+              if (imageBlobs.has(cleanCid)) return `src="${imageBlobs.get(cleanCid)}"`
+              return `src="${Array.from(imageBlobs.values())[0]}"`
             })
           }
         }
@@ -283,6 +282,43 @@ export default function CleanRoomPage() {
       setError('Failed to securely download attachment.')
     }
   }, [])
+
+  const handlePrint = useCallback(() => {
+    if (!selectedMessage) return
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Print Email - NOTSPAM.uk</title>
+            <style>
+              body { font-family: sans-serif; padding: 20px; color: #000; background: #fff; }
+              .header { border-bottom: 2px solid #eee; padding-bottom: 20px; margin-bottom: 20px; }
+              .header h2 { margin: 0 0 10px 0; font-size: 24px; }
+              .header p { margin: 4px 0; color: #333; font-size: 14px; }
+              .content { font-size: 14px; line-height: 1.5; }
+              img { max-width: 100%; height: auto; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h2>${selectedMessage.subject || '(no subject)'}</h2>
+              <p><strong>From:</strong> ${selectedMessage.from.address}</p>
+              <p><strong>To:</strong> ${address}</p>
+              <p><strong>Date:</strong> ${formatDate(selectedMessage.createdAt)}</p>
+            </div>
+            <div class="content">${selectedMessage.html[0]}</div>
+            <script>
+              window.onload = () => { setTimeout(() => { window.print(); window.close(); }, 500); }
+            </script>
+          </body>
+        </html>
+      `)
+      printWindow.document.close()
+    } else {
+      window.print() // Fallback if popup blocked
+    }
+  }, [selectedMessage, address])
 
   const copyAddress = useCallback(() => {
     if (!address) return
@@ -403,13 +439,7 @@ export default function CleanRoomPage() {
             {selectedMessage.subject || '(no subject)'}
           </h2>
           <button
-            onClick={() => {
-              if (iframeRef.current?.contentWindow) {
-                iframeRef.current.contentWindow.print()
-              } else {
-                window.print()
-              }
-            }}
+            onClick={handlePrint}
             className="print:hidden shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-emerald-500 hover:bg-slate-800 transition-colors border border-slate-700"
             title="Print to PDF"
           >
@@ -446,26 +476,10 @@ export default function CleanRoomPage() {
       <div className="flex-1 overflow-hidden min-h-0 bg-white">
         {selectedMessage.html && selectedMessage.html.length > 0 ? (
           <iframe
-            ref={iframeRef}
             title="Message content"
-            srcDoc={`
-              <style>
-                .print-only-header { display: none; }
-                @media print {
-                  .print-only-header { display: block; font-family: sans-serif; padding-bottom: 20px; border-bottom: 2px solid #ccc; margin-bottom: 20px; page-break-after: avoid; break-after: avoid; }
-                  body { margin: 0; padding: 0; }
-                }
-              </style>
-              <div class="print-only-header">
-                <h2 style="margin:0 0 10px 0;">${selectedMessage.subject || '(no subject)'}</h2>
-                <p style="margin: 2px 0; color: #333;"><strong>From:</strong> ${selectedMessage.from.address}</p>
-                <p style="margin: 2px 0; color: #333;"><strong>To:</strong> ${address}</p>
-                <p style="margin: 2px 0; color: #333;"><strong>Date:</strong> ${formatDate(selectedMessage.createdAt)}</p>
-              </div>
-              ${selectedMessage.html[0]}
-            `}
-            sandbox="allow-same-origin allow-scripts allow-modals"
-            className="w-full h-full border-0 print:h-auto print:min-h-screen"
+            srcDoc={selectedMessage.html[0]}
+            sandbox="allow-same-origin allow-scripts allow-popups"
+            className="w-full h-full border-0 print:hidden"
           />
         ) : (
           <div className="h-full overflow-y-auto p-5 bg-slate-950 print:bg-white print:overflow-visible">
