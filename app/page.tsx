@@ -155,16 +155,7 @@ export default function CleanRoomPage() {
     }
   }, [])
 
-  // 1. Get Domain
-  const getActiveDomain = async (): Promise<string> => {
-    const res = await fetch(`${API_BASE}/domains`, { cache: 'no-store' })
-    if (!res.ok) throw new Error('Failed to fetch mail domains')
-    const data = await res.json()
-    if (!data['hydra:member'] || data['hydra:member'].length === 0) throw new Error('No domains available')
-    return data['hydra:member'][0].domain
-  }
-
-  // 2. Auth (Create account or login)
+  // 1. Auth (Create account or login)
   const authenticate = async (fullAddress: string): Promise<string> => {
     const password = getPasswordForAddress(fullAddress)
     
@@ -208,7 +199,7 @@ export default function CleanRoomPage() {
     setIsLoading(true)
     setError(null)
     try {
-      const domain = await getActiveDomain()
+      const domain = 'notspam.uk'
       const lp = localPart || generateLocalPart()
       const fullAddress = `${lp}@${domain}`
       
