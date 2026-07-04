@@ -26,7 +26,6 @@ const API_BASE = 'https://api.mail.tm'
 const POLL_INTERVAL_MS = 10_000
 const ADDRESS_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789'
 const ADDRESS_LENGTH = 10
-const TARGET_DOMAIN = 'notspam.uk'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -83,16 +82,25 @@ export default function CleanRoomPage() {
   const isFetchingRef = useRef<boolean>(false)
   const prevMessageIdsRef = useRef<Set<string>>(new Set())
 
+  // Get active free domain from Mail.tm
+  const getActiveDomain = async (): Promise<string> => {
+    const res = await fetch(`${API_BASE}/domains`, { cache: 'no-store' })
+    if (!res.ok) throw new Error('Failed to fetch mail domains')
+    const data = await res.json()
+    if (!data['hydra:member'] || data['hydra:member'].length === 0) throw new Error('No domains available')
+    return data['hydra:member'][0].domain
+  }
+
   // 1. Auth (Create anonymous ephemeral account)
   const setupAccount = useCallback(async () => {
     setIsLoading(true)
     setError(null)
     try {
+      const domain = await getActiveDomain()
       const username = generateRandomString(ADDRESS_LENGTH)
       const password = generateRandomString(16) // Strong random password
-      const fullAddress = `${username}@${TARGET_DOMAIN}`
+      const fullAddress = `${username}@${domain}`
       
-      // Create account
       const createRes = await fetch(`${API_BASE}/accounts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -100,7 +108,7 @@ export default function CleanRoomPage() {
       })
       
       if (!createRes.ok) {
-        throw new Error('Failed to create account (Ensure MX records point to Mail.tm)')
+        throw new Error('Failed to create account on the Mail.tm network')
       }
       
       // Get JWT Token
