@@ -5,38 +5,44 @@ import Image from 'next/image'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface EmailMessage {
-  id: number
-  from: string
-  subject: string
-  date: string
-  attachments: number
+interface MailTmDomain {
+  id: string
+  domain: string
 }
 
-interface Attachment {
-  filename: string
-  contentType: string
-  size: number
+interface MailTmAccount {
+  id: string
+  address: string
 }
 
-interface EmailContent {
-  id: number
-  from: string
+interface MailTmToken {
+  token: string
+}
+
+interface MailTmMessageMeta {
+  id: string
+  from: { address: string; name: string }
   subject: string
-  date: string
-  body: string
-  htmlBody: string
-  textBody: string
-  attachments: Attachment[]
+  intro: string
+  createdAt: string
+  hasAttachments: boolean
+}
+
+interface MailTmMessageContent extends MailTmMessageMeta {
+  html: string[]
+  text: string
+  attachments: { id: string; filename: string; size: number }[]
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const API_BASE = '/api/secmail'
+const API_BASE = 'https://api.mail.tm'
 const POLL_INTERVAL_MS = 10_000
 const ADDRESS_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789'
 const ADDRESS_LENGTH = 10
-const SECMAIL_DOMAIN = '1secmail.com'
+// We use a deterministic password based on the address so that bookmarking the ?id= in the URL 
+// allows us to re-authenticate and fetch the token again without needing a database.
+const getPasswordForAddress = (address: string) => `${address}-notspam-secure`
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -118,79 +124,154 @@ function EmptyReader() {
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function CleanRoomPage() {
-  const [localPart, setLocalPart] = useState<string>('')
-  const [messages, setMessages] = useState<EmailMessage[]>([])
-  const [selectedMessage, setSelectedMessage] = useState<EmailContent | null>(null)
+  const [address, setAddress] = useState<string>('')
+  const [token, setToken] = useState<string>('')
+  
+  const [messages, setMessages] = useState<MailTmMessageMeta[]>([])
+  const [selectedMessage, setSelectedMessage] = useState<MailTmMessageContent | null>(null)
+  
   const [isPolling, setIsPolling] = useState<boolean>(true)
-  const [isLoading, setIsLoading] = useState<boolean>(false)
+  const [isLoading, setIsLoading] = useState<boolean>(true) // true on boot while making account
   const [isLoadingContent, setIsLoadingContent] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
   const [lastChecked, setLastChecked] = useState<Date | null>(null)
+  
   const [copyFeedback, setCopyFeedback] = useState<boolean>(false)
   const [linkCopyFeedback, setLinkCopyFeedback] = useState<boolean>(false)
-  const [newMessageIds, setNewMessageIds] = useState<Set<number>>(new Set())
-  // Mobile: 'inbox' shows the list, 'reader' shows the message content
+  const [newMessageIds, setNewMessageIds] = useState<Set<string>>(new Set())
   const [mobileTab, setMobileTab] = useState<'inbox' | 'reader'>('inbox')
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const isFetchingRef = useRef<boolean>(false)
-  const prevMessageIdsRef = useRef<Set<number>>(new Set())
+  const prevMessageIdsRef = useRef<Set<string>>(new Set())
 
-  const setAddressWithUrl = useCallback((lp: string) => {
-    setLocalPart(lp)
+  // Write address into the URL so the page is bookmarkable
+  const setAddressWithUrl = useCallback((newAddress: string) => {
+    setAddress(newAddress)
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href)
-      url.searchParams.set('id', lp)
+      url.searchParams.set('id', newAddress.split('@')[0])
       window.history.replaceState(null, '', url.toString())
     }
   }, [])
 
-  const generateAddress = useCallback(() => {
-    const lp = generateLocalPart()
-    setAddressWithUrl(lp)
-    setMessages([])
-    setSelectedMessage(null)
-    setError(null)
-    setLastChecked(null)
-    setNewMessageIds(new Set())
-    setMobileTab('inbox')
-    prevMessageIdsRef.current = new Set()
-  }, [setAddressWithUrl])
+  // 1. Get Domain
+  const getActiveDomain = async (): Promise<string> => {
+    const res = await fetch(`${API_BASE}/domains`, { cache: 'no-store' })
+    if (!res.ok) throw new Error('Failed to fetch mail domains')
+    const data = await res.json()
+    if (!data['hydra:member'] || data['hydra:member'].length === 0) throw new Error('No domains available')
+    return data['hydra:member'][0].domain
+  }
 
-  const fetchMessages = useCallback(async (lp: string) => {
-    if (isFetchingRef.current || !lp) return
-    isFetchingRef.current = true
+  // 2. Auth (Create account or login)
+  const authenticate = async (fullAddress: string): Promise<string> => {
+    const password = getPasswordForAddress(fullAddress)
+    
+    // Try to get token (login)
+    const tokenRes = await fetch(`${API_BASE}/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: fullAddress, password })
+    })
+    
+    if (tokenRes.ok) {
+      const { token } = await tokenRes.json()
+      return token
+    }
+    
+    // If login fails, try to create account
+    const createRes = await fetch(`${API_BASE}/accounts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: fullAddress, password })
+    })
+    
+    if (!createRes.ok) {
+      throw new Error('Failed to create or authenticate account')
+    }
+    
+    // Try token again after creation
+    const newTokenRes = await fetch(`${API_BASE}/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: fullAddress, password })
+    })
+    
+    if (!newTokenRes.ok) throw new Error('Failed to acquire token after creation')
+    const { token } = await newTokenRes.json()
+    return token
+  }
+
+  // Boot or Generate New
+  const setupAccount = useCallback(async (localPart?: string) => {
     setIsLoading(true)
     setError(null)
     try {
-      const res = await fetch(`${API_BASE}?action=getMessages&login=${lp}&domain=${SECMAIL_DOMAIN}`, { cache: 'no-store' })
+      const domain = await getActiveDomain()
+      const lp = localPart || generateLocalPart()
+      const fullAddress = `${lp}@${domain}`
+      
+      const jwt = await authenticate(fullAddress)
+      setToken(jwt)
+      setAddressWithUrl(fullAddress)
+      
+      setMessages([])
+      setSelectedMessage(null)
+      setLastChecked(null)
+      setNewMessageIds(new Set())
+      setMobileTab('inbox')
+      prevMessageIdsRef.current = new Set()
+      
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Authentication failed')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [setAddressWithUrl])
+
+  // Fetch Messages
+  const fetchMessages = useCallback(async (jwt: string) => {
+    if (isFetchingRef.current || !jwt) return
+    isFetchingRef.current = true
+    setError(null)
+    try {
+      const res = await fetch(`${API_BASE}/messages`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+        cache: 'no-store'
+      })
       if (!res.ok) throw new Error(`API status ${res.status}`)
-      const data: EmailMessage[] = await res.json()
-      const incomingIds = new Set(data.map((m) => m.id))
-      const genuinelyNew = new Set<number>()
+      const data = await res.json()
+      const msgs: MailTmMessageMeta[] = data['hydra:member'] || []
+      
+      const incomingIds = new Set(msgs.map((m) => m.id))
+      const genuinelyNew = new Set<string>()
       for (const id of incomingIds) {
         if (!prevMessageIdsRef.current.has(id)) genuinelyNew.add(id)
       }
       prevMessageIdsRef.current = incomingIds
-      setMessages(data)
+      setMessages(msgs)
       setLastChecked(new Date())
       if (genuinelyNew.size > 0) {
         setNewMessageIds(genuinelyNew)
         setTimeout(() => setNewMessageIds(new Set()), 3000)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch')
+      setError(err instanceof Error ? err.message : 'Failed to fetch inbox')
     } finally {
-      setIsLoading(false)
       isFetchingRef.current = false
     }
   }, [])
 
-  const fetchMessageContent = useCallback(async (lp: string, id: number) => {
+  // Read single message
+  const fetchMessageContent = useCallback(async (jwt: string, id: string) => {
     setIsLoadingContent(true)
     setSelectedMessage(null)
     try {
-      const res = await fetch(`${API_BASE}?action=readMessage&login=${lp}&domain=${SECMAIL_DOMAIN}&id=${id}`, { cache: 'no-store' })
+      const res = await fetch(`${API_BASE}/messages/${id}`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+        cache: 'no-store'
+      })
       if (!res.ok) throw new Error(`API status ${res.status}`)
       setSelectedMessage(await res.json())
     } catch (err) {
@@ -200,47 +281,51 @@ export default function CleanRoomPage() {
     }
   }, [])
 
-  const handleMessageClick = useCallback((id: number) => {
-    fetchMessageContent(localPart, id)
+  const handleMessageClick = useCallback((id: string) => {
+    if (!token) return
+    fetchMessageContent(token, id)
     setMobileTab('reader')
-  }, [localPart, fetchMessageContent])
+  }, [token, fetchMessageContent])
 
   const copyAddress = useCallback(() => {
-    if (!localPart) return
-    navigator.clipboard.writeText(`${localPart}@1secmail.com`)
+    if (!address) return
+    navigator.clipboard.writeText(address)
       .then(() => { setCopyFeedback(true); setTimeout(() => setCopyFeedback(false), 2000) })
       .catch(() => setError('Could not access clipboard.'))
-  }, [localPart])
+  }, [address])
 
   const copyLink = useCallback(() => {
-    if (!localPart) return
-    navigator.clipboard.writeText(`${window.location.origin}/?id=${localPart}`)
+    if (!address) return
+    const lp = address.split('@')[0]
+    navigator.clipboard.writeText(`${window.location.origin}/?id=${lp}`)
       .then(() => { setLinkCopyFeedback(true); setTimeout(() => setLinkCopyFeedback(false), 2000) })
       .catch(() => setError('Could not access clipboard.'))
-  }, [localPart])
+  }, [address])
 
+  // Polling loop
   useEffect(() => {
-    if (!localPart) return
-    fetchMessages(localPart)
+    if (!token) return
+    fetchMessages(token)
     if (isPolling) {
-      pollingRef.current = setInterval(() => fetchMessages(localPart), POLL_INTERVAL_MS)
+      pollingRef.current = setInterval(() => fetchMessages(token), POLL_INTERVAL_MS)
     }
     return () => { if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null } }
-  }, [localPart, isPolling, fetchMessages])
+  }, [token, isPolling, fetchMessages])
 
+  // Boot sequence
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const urlId = new URLSearchParams(window.location.search).get('id')
       if (urlId && /^[a-z0-9]{10}$/.test(urlId)) {
-        setAddressWithUrl(urlId)
+        setupAccount(urlId)
       } else {
-        generateAddress()
+        setupAccount() // Generate random
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const displayLocal = localPart || '──────────'
+  const displayAddress = address || '──────────'
 
   // ─── Message list (shared between desktop sidebar and mobile inbox tab) ──────
 
@@ -265,7 +350,7 @@ export default function CleanRoomPage() {
                 }}
                 onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
                 onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent' }}
-                aria-label={`Email from ${msg.from}: ${msg.subject}`}
+                aria-label={`Email from ${msg.from.address}: ${msg.subject}`}
                 aria-pressed={isSelected}
               >
                 {isNew && (
@@ -274,13 +359,13 @@ export default function CleanRoomPage() {
                     <span className="text-[0.65rem] font-bold tracking-wider" style={{ color: '#10b981' }}>NEW</span>
                   </div>
                 )}
-                <p className="text-xs truncate mb-0.5" style={{ color: 'var(--color-text-secondary)' }}>{msg.from}</p>
+                <p className="text-xs truncate mb-0.5" style={{ color: 'var(--color-text-secondary)' }}>{msg.from.address}</p>
                 <p className="text-sm font-medium truncate mb-1.5 leading-tight" style={{ color: 'var(--color-text-primary)' }}>
                   {msg.subject || '(no subject)'}
                 </p>
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs truncate" style={{ color: 'var(--color-text-muted)' }}>{formatDate(msg.date)}</p>
-                  {msg.attachments > 0 && <span className="text-xs shrink-0" style={{ color: 'var(--color-cyan)' }}>📎 {msg.attachments}</span>}
+                  <p className="text-xs truncate" style={{ color: 'var(--color-text-muted)' }}>{formatDate(msg.createdAt)}</p>
+                  {msg.hasAttachments && <span className="text-xs shrink-0" style={{ color: 'var(--color-cyan)' }}>📎</span>}
                 </div>
               </button>
             )
@@ -308,15 +393,15 @@ export default function CleanRoomPage() {
         </h2>
         <div className="grid grid-cols-[48px_1fr] gap-x-3 gap-y-1 text-xs">
           <span style={{ color: 'var(--color-text-muted)' }}>From</span>
-          <span className="truncate" style={{ color: 'var(--color-cyan)' }}>{selectedMessage.from}</span>
+          <span className="truncate" style={{ color: 'var(--color-cyan)' }}>{selectedMessage.from.address}</span>
           <span style={{ color: 'var(--color-text-muted)' }}>To</span>
           <span className="truncate" style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-jetbrains), monospace' }}>
-            {localPart}@1secmail.com
+            {address}
           </span>
           <span style={{ color: 'var(--color-text-muted)' }}>Date</span>
-          <span style={{ color: 'var(--color-text-secondary)' }}>{formatDate(selectedMessage.date)}</span>
+          <span style={{ color: 'var(--color-text-secondary)' }}>{formatDate(selectedMessage.createdAt)}</span>
         </div>
-        {selectedMessage.attachments.length > 0 && (
+        {selectedMessage.attachments && selectedMessage.attachments.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">
             {selectedMessage.attachments.map((att, idx) => (
               <span key={idx} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}>
@@ -329,10 +414,10 @@ export default function CleanRoomPage() {
       </div>
       {/* Body */}
       <div className="flex-1 overflow-hidden min-h-0">
-        {selectedMessage.htmlBody ? (
+        {selectedMessage.html && selectedMessage.html.length > 0 ? (
           <iframe
             title={`Email: ${selectedMessage.subject}`}
-            srcDoc={selectedMessage.htmlBody}
+            srcDoc={selectedMessage.html[0]}
             sandbox="allow-same-origin"
             className="w-full h-full border-0 bg-white"
             aria-label="Email body content"
@@ -340,7 +425,7 @@ export default function CleanRoomPage() {
         ) : (
           <div className="h-full overflow-y-auto p-5">
             <pre className="text-sm leading-relaxed whitespace-pre-wrap break-words" style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-jetbrains), monospace' }}>
-              {selectedMessage.textBody || selectedMessage.body || '(empty message body)'}
+              {selectedMessage.text || '(empty message body)'}
             </pre>
           </div>
         )}
@@ -391,16 +476,21 @@ export default function CleanRoomPage() {
           {/* New address */}
           <button
             id="new-address-btn"
-            onClick={generateAddress}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium cursor-pointer transition-all duration-200"
+            onClick={() => setupAccount()}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium cursor-pointer transition-all duration-200 disabled:opacity-50"
             style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(16,185,129,0.4)'; e.currentTarget.style.color = '#10b981' }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.color = 'var(--color-text-secondary)' }}
+            onMouseEnter={(e) => { if(!isLoading) { e.currentTarget.style.borderColor = 'rgba(16,185,129,0.4)'; e.currentTarget.style.color = '#10b981' } }}
+            onMouseLeave={(e) => { if(!isLoading) { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.color = 'var(--color-text-secondary)' } }}
             aria-label="Generate a new email address"
           >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
+            {isLoading ? (
+               <div className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: 'var(--color-text-secondary)', borderTopColor: 'transparent' }} />
+            ) : (
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+            )}
             <span className="hidden sm:inline">New Address</span>
           </button>
         </header>
@@ -428,10 +518,10 @@ export default function CleanRoomPage() {
                 id="active-address"
                 className="flex-1 text-base font-medium tracking-tight truncate"
                 style={{ fontFamily: 'var(--font-jetbrains), monospace' }}
-                aria-label={`Active address: ${displayLocal}@1secmail.com`}
+                aria-label={`Active address: ${displayAddress}`}
               >
-                <span style={{ color: '#10b981' }}>{displayLocal}</span>
-                <span style={{ color: 'var(--color-text-muted)' }}>@1secmail.com</span>
+                <span style={{ color: '#10b981' }}>{displayAddress.split('@')[0]}</span>
+                {displayAddress.includes('@') && <span style={{ color: 'var(--color-text-muted)' }}>@{displayAddress.split('@')[1]}</span>}
               </span>
               {/* Polling toggle pill */}
               <button
@@ -453,7 +543,7 @@ export default function CleanRoomPage() {
               <button
                 id="copy-address-btn"
                 onClick={copyAddress}
-                disabled={!localPart}
+                disabled={!address}
                 className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-semibold text-sm cursor-pointer transition-all duration-200 disabled:opacity-40"
                 style={copyFeedback
                   ? { background: '#059669', color: '#fff', boxShadow: '0 0 20px rgba(16,185,129,0.3)' }
@@ -475,7 +565,7 @@ export default function CleanRoomPage() {
               <button
                 id="copy-link-btn"
                 onClick={copyLink}
-                disabled={!localPart}
+                disabled={!address}
                 title="Copy bookmarkable link to this inbox"
                 className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium cursor-pointer transition-all duration-200 disabled:opacity-40"
                 style={linkCopyFeedback
@@ -526,7 +616,6 @@ export default function CleanRoomPage() {
                   {messages.length}
                 </span>
               </div>
-              {isLoading && <div className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: '#10b981', borderTopColor: 'transparent' }} />}
             </div>
             {messageList}
           </aside>
