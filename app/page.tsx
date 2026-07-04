@@ -247,6 +247,27 @@ export default function CleanRoomPage() {
     setMobileTab('reader')
   }, [token, fetchMessageContent])
 
+  const downloadAttachment = useCallback(async (jwt: string, msgId: string, att: any) => {
+    try {
+      const attRes = await fetch(`${API_BASE}/messages/${msgId}/attachment/${att.id}`, { 
+        headers: { Authorization: `Bearer ${jwt}` } 
+      })
+      if (!attRes.ok) throw new Error('Download failed')
+      const blob = await attRes.blob()
+      const url = URL.createObjectURL(blob)
+      
+      const a = document.createElement('a')
+      a.href = url
+      a.download = att.filename || 'attachment'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setError('Failed to securely download attachment.')
+    }
+  }, [])
+
   const copyAddress = useCallback(() => {
     if (!address) return
     navigator.clipboard.writeText(address)
@@ -393,10 +414,15 @@ export default function CleanRoomPage() {
         {selectedMessage.attachments && selectedMessage.attachments.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2 print:hidden">
             {selectedMessage.attachments.map((att, idx) => (
-              <span key={idx} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs bg-slate-800 border border-slate-700 text-slate-300">
+              <button 
+                key={idx} 
+                onClick={() => downloadAttachment(token, selectedMessage.id, att)}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs bg-slate-800 border border-slate-700 text-slate-300 hover:text-cyan-400 hover:border-cyan-500/50 cursor-pointer transition-colors shadow-sm"
+                title="Download Attachment securely"
+              >
                 📎 <span className="truncate max-w-[120px]">{att.filename}</span>
                 <span className="text-slate-500">({formatBytes(att.size)})</span>
-              </span>
+              </button>
             ))}
           </div>
         )}
@@ -444,8 +470,8 @@ export default function CleanRoomPage() {
         {/* HEADER */}
         <header className="shrink-0 flex items-center justify-between px-8 py-6 rounded-2xl bg-slate-950 border border-slate-800">
           <div className="flex items-center gap-6">
-            <Image src="/icons/notspam.png" alt="NOTSPAM Shield" width={96} height={96} priority className="object-contain" />
-            <h1 className="text-5xl font-black tracking-tight">
+            <Image src="/icons/notspam.png" alt="NOTSPAM Shield" width={128} height={128} priority className="object-contain" />
+            <h1 className="text-6xl font-black tracking-tight">
               <span className="text-emerald-500">NOTSPAM</span>
               <span className="text-slate-400 font-normal">.uk</span>
             </h1>
