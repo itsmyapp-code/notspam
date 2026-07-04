@@ -344,14 +344,14 @@ export default function CleanRoomPage() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 lg:p-12 bg-slate-900 text-slate-200">
-      <div className="flex flex-col gap-4 w-full max-w-[1200px] flex-1 max-h-[900px] h-full">
+    <div className="min-h-screen flex flex-col items-center p-4 pt-12 sm:p-6 sm:pt-20 lg:p-12 lg:pt-32 bg-slate-900 text-slate-200">
+      <div className="flex flex-col gap-4 w-full max-w-[1200px] h-[calc(100vh-160px)] min-h-[600px] max-h-[900px]">
 
         {/* HEADER */}
-        <header className="shrink-0 flex items-center justify-between px-5 py-4 rounded-2xl bg-slate-950 border border-slate-800">
-          <div className="flex items-center gap-3">
-            <Image src="/icons/notspam.png" alt="NOTSPAM Shield" width={32} height={32} priority className="object-contain" />
-            <h1 className="text-xl font-black tracking-tight">
+        <header className="shrink-0 flex items-center justify-between px-6 py-5 rounded-2xl bg-slate-950 border border-slate-800">
+          <div className="flex items-center gap-4">
+            <Image src="/icons/notspam.png" alt="NOTSPAM Shield" width={48} height={48} priority className="object-contain" />
+            <h1 className="text-3xl font-black tracking-tight">
               <span className="text-emerald-500">NOTSPAM</span>
               <span className="text-slate-400 font-normal">.uk</span>
             </h1>
