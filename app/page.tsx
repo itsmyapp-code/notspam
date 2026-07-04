@@ -211,23 +211,29 @@ export default function CleanRoomPage() {
       // Load inline images (CIDs)
       let htmlContent = msgData.html && msgData.html.length > 0 ? msgData.html[0] : ''
       if (htmlContent && msgData.attachments && msgData.attachments.length > 0) {
-        const imageAttachments = msgData.attachments.filter((a: any) => a.contentType?.startsWith('image/'))
-        
-        if (imageAttachments.length > 0) {
+        // Process all attachments in case images were sent as octet-stream
+        if (msgData.attachments.length > 0) {
           const imageBlobs = new Map<string, string>()
           
-          for (const att of imageAttachments) {
+          for (const att of msgData.attachments) {
             try {
               const urlPath = att.downloadUrl || `/messages/${msgData.id}/attachment/${att.id}`
               const attRes = await fetch(`${API_BASE}${urlPath}`, { 
                 headers: { Authorization: `Bearer ${jwt}` } 
               })
               if (attRes.ok) {
-                const blob = await attRes.blob()
-                const url = URL.createObjectURL(blob)
-                imageBlobs.set(att.id, url)
-                if (att.filename) imageBlobs.set(att.filename, url)
-                if (att.contentId) imageBlobs.set(att.contentId.replace(/[<>]/g, ''), url)
+                const arrayBuffer = await attRes.arrayBuffer()
+                let binary = ''
+                const bytes = new Uint8Array(arrayBuffer)
+                for (let i = 0; i < bytes.byteLength; i++) {
+                  binary += String.fromCharCode(bytes[i])
+                }
+                const base64 = window.btoa(binary)
+                const dataUrl = `data:${att.contentType || 'image/png'};base64,${base64}`
+                
+                imageBlobs.set(att.id, dataUrl)
+                if (att.filename) imageBlobs.set(att.filename, dataUrl)
+                if (att.contentId) imageBlobs.set(att.contentId.replace(/[<>]/g, ''), dataUrl)
               }
             } catch (e) {
               console.error('Failed to load inline image', e)
@@ -235,9 +241,14 @@ export default function CleanRoomPage() {
           }
           
           if (imageBlobs.size > 0) {
-            // Aggressively replace ANY src attribute that is a cid or relative path
+            // Aggressively replace ANY src attribute or cid: tag
+            htmlContent = htmlContent.replace(/cid:([^"'\s>]+)/gi, (match: string, cid: string) => {
+              const cleanCid = cid.replace(/[<>]/g, '')
+              if (imageBlobs.has(cleanCid)) return imageBlobs.get(cleanCid)!
+              return Array.from(imageBlobs.values())[0] || match
+            })
             htmlContent = htmlContent.replace(/src=["'](?:cid:)?([^"']+)["']/gi, (match: string, cid: string) => {
-              if (match.toLowerCase().includes('http')) return match; // Leave external images alone
+              if (match.toLowerCase().includes('http') || match.toLowerCase().includes('data:')) return match;
               const cleanCid = cid.replace(/[<>]/g, '')
               if (imageBlobs.has(cleanCid)) return `src="${imageBlobs.get(cleanCid)}"`
               return `src="${Array.from(imageBlobs.values())[0]}"`
@@ -292,12 +303,14 @@ export default function CleanRoomPage() {
           <head>
             <title>Print Email - NOTSPAM.uk</title>
             <style>
-              body { font-family: sans-serif; padding: 20px; color: #000; background: #fff; }
-              .header { border-bottom: 2px solid #eee; padding-bottom: 20px; margin-bottom: 20px; }
+              body { font-family: sans-serif; padding: 20px; color: #000; background: #fff; margin: 0; }
+              .header { border-bottom: 2px solid #eee; padding-bottom: 20px; margin-bottom: 20px; page-break-after: avoid; break-after: avoid; }
               .header h2 { margin: 0 0 10px 0; font-size: 24px; }
               .header p { margin: 4px 0; color: #333; font-size: 14px; }
-              .content { font-size: 14px; line-height: 1.5; }
-              img { max-width: 100%; height: auto; }
+              .content { font-size: 14px; line-height: 1.5; page-break-before: avoid; break-before: avoid; }
+              /* Aggressively strip heights from email HTML to prevent multi-page blank gaps */
+              .content, .content * { max-height: none !important; height: auto !important; min-height: 0 !important; }
+              img { max-width: 100%; height: auto !important; }
             </style>
           </head>
           <body>
