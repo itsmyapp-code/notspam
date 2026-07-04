@@ -545,18 +545,25 @@ export default function CleanRoomPage() {
       <div className="flex flex-col gap-4 w-full max-w-[1200px] h-[calc(100vh-160px)] min-h-[600px] max-h-[900px]">
 
         {/* HEADER */}
-        <header className="shrink-0 flex items-center justify-between px-8 py-6 rounded-2xl bg-slate-950 border border-slate-800">
-          <div className="flex items-center gap-6">
-            <Image src="/icons/notspam.png" alt="NOTSPAM Shield" width={128} height={128} priority className="object-contain" />
-            <h1 className="text-6xl font-black tracking-tight">
+        <header className="shrink-0 flex flex-col sm:flex-row items-center justify-between gap-4 sm:gap-0 px-6 sm:px-8 py-6 rounded-2xl bg-slate-950 border border-slate-800 text-center sm:text-left">
+          <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-6">
+            <Image 
+              src="/icons/notspam.png" 
+              alt="NOTSPAM Shield" 
+              width={128} 
+              height={128} 
+              priority 
+              className="object-contain w-16 h-16 sm:w-24 sm:h-24 lg:w-32 lg:h-32" 
+            />
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight">
               <span className="text-emerald-500">NOTSPAM</span>
               <span className="text-slate-400 font-normal">.uk</span>
             </h1>
           </div>
           
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 shrink-0">
             <PulseDot />
-            <span className="text-xs font-semibold tracking-wider text-emerald-500">VERIFIED ZERO-SERVER</span>
+            <span className="text-[10px] sm:text-xs font-semibold tracking-wider text-emerald-500">VERIFIED ZERO-SERVER</span>
           </div>
         </header>
 
