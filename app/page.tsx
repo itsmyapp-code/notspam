@@ -454,7 +454,7 @@ export default function CleanRoomPage() {
               </button>
               
               <button
-                onClick={setupAccount}
+                onClick={() => setupAccount()}
                 disabled={isLoading}
                 className="flex items-center justify-center px-4 py-3 rounded-xl transition-all disabled:opacity-50 bg-slate-800 text-slate-300 hover:text-emerald-500 hover:border-emerald-500/40 border border-slate-700"
                 aria-label="Generate New Address"
