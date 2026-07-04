@@ -212,35 +212,37 @@ export default function CleanRoomPage() {
       // Load inline images (CIDs)
       let htmlContent = msgData.html && msgData.html.length > 0 ? msgData.html[0] : ''
       if (htmlContent && msgData.attachments && msgData.attachments.length > 0) {
-        // Find all cid: occurrences in the HTML
-        const cidRegex = /cid:([^"'\s>]+)/g;
-        let match;
-        const cidsToReplace = new Set<string>();
-        while ((match = cidRegex.exec(htmlContent)) !== null) {
-          cidsToReplace.add(match[1]);
-        }
-
-        for (const cid of cidsToReplace) {
-          // Find the matching attachment (by contentId, cid, filename, or id)
-          const att = msgData.attachments.find((a: any) => 
-            a.contentId === cid || a.contentId === `<${cid}>` || a.cid === cid || a.filename === cid || a.id === cid
-          );
+        const imageAttachments = msgData.attachments.filter((a: any) => a.contentType?.startsWith('image/'))
+        
+        if (imageAttachments.length > 0) {
+          const imageBlobs = new Map<string, string>()
           
-          if (att) {
+          for (const att of imageAttachments) {
             try {
-              const urlPath = att.downloadUrl || `/messages/${id}/attachment/${att.id}`
+              const urlPath = att.downloadUrl || `/messages/${msgData.id}/attachment/${att.id}`
               const attRes = await fetch(`${API_BASE}${urlPath}`, { 
                 headers: { Authorization: `Bearer ${jwt}` } 
               })
               if (attRes.ok) {
                 const blob = await attRes.blob()
                 const url = URL.createObjectURL(blob)
-                // Replace all instances of this cid
-                htmlContent = htmlContent.replace(new RegExp(`cid:${cid}`, 'g'), url)
+                imageBlobs.set(att.id, url)
+                if (att.filename) imageBlobs.set(att.filename, url)
+                if (att.contentId) imageBlobs.set(att.contentId.replace(/[<>]/g, ''), url)
               }
             } catch (e) {
               console.error('Failed to load inline image', e)
             }
+          }
+          
+          if (imageBlobs.size > 0) {
+            // Aggressively replace any cid: references
+            htmlContent = htmlContent.replace(/cid:([^"'\s>]+)/g, (match, cid) => {
+              const cleanCid = cid.replace(/[<>]/g, '')
+              if (imageBlobs.has(cleanCid)) return imageBlobs.get(cleanCid)!
+              // Fallback to first image if no exact match (Mail.tm often strips CIDs)
+              return Array.from(imageBlobs.values())[0] || match
+            })
           }
         }
         msgData.html[0] = htmlContent
@@ -450,7 +452,8 @@ export default function CleanRoomPage() {
               <style>
                 .print-only-header { display: none; }
                 @media print {
-                  .print-only-header { display: block; font-family: sans-serif; padding-bottom: 20px; border-bottom: 2px solid #ccc; margin-bottom: 20px; }
+                  .print-only-header { display: block; font-family: sans-serif; padding-bottom: 20px; border-bottom: 2px solid #ccc; margin-bottom: 20px; page-break-after: avoid; break-after: avoid; }
+                  body { margin: 0; padding: 0; }
                 }
               </style>
               <div class="print-only-header">
