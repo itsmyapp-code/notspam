@@ -294,6 +294,26 @@ export default function CleanRoomPage() {
     }
   }, [])
 
+  const deleteMessage = useCallback(async (jwt: string, msgId: string) => {
+    setIsLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/messages/${msgId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${jwt}` }
+      })
+      if (!res.ok) throw new Error('Failed to delete message')
+      
+      setMessages(prev => prev.filter(m => m.id !== msgId))
+      if (selectedMessage?.id === msgId) {
+        setSelectedMessage(null)
+      }
+    } catch (err) {
+      setError('Failed to delete the message.')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [selectedMessage])
+
   const handlePrint = useCallback(() => {
     if (!selectedMessage) return
     const printWindow = window.open('', '_blank')
@@ -368,7 +388,7 @@ export default function CleanRoomPage() {
   // ─── UI Views ──────────────────────────────────────────────────────────────
 
   const messageList = (
-    <div className="flex-1 overflow-y-auto" role="list">
+    <div className="flex-1 overflow-y-auto" role="list" style={{ paddingLeft: '1.5rem', paddingRight: '1.5rem', paddingTop: '1rem', paddingBottom: '1rem' }}>
       {messages.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-6 py-10">
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.15)' }}>
@@ -446,21 +466,34 @@ export default function CleanRoomPage() {
     </div>
   ) : (
     <>
-      <div className="shrink-0 px-5 py-4 border-b border-slate-800 print:border-b-0 print:p-0 print:mb-4">
+      <div className="shrink-0 py-4 border-b border-slate-800 print:border-b-0 print:p-0 print:mb-4" style={{ paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
         <div className="flex items-start justify-between gap-4 mb-3">
           <h2 className="text-base font-semibold leading-tight text-slate-100">
             {selectedMessage.subject || '(no subject)'}
           </h2>
-          <button
-            onClick={handlePrint}
-            className="print:hidden shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-emerald-500 hover:bg-slate-800 transition-colors border border-slate-700"
-            title="Print to PDF"
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-            </svg>
-            <span>Print</span>
-          </button>
+          <div className="print:hidden shrink-0 flex items-center gap-2">
+            <button
+              onClick={() => deleteMessage(token, selectedMessage.id)}
+              disabled={isLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors border border-red-500/20 disabled:opacity-50"
+              title="Delete Email"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              <span>Delete</span>
+            </button>
+            <button
+              onClick={handlePrint}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-emerald-500 hover:bg-slate-800 transition-colors border border-slate-700"
+              title="Print to PDF"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              </svg>
+              <span>Print</span>
+            </button>
+          </div>
         </div>
         <div className="grid grid-cols-[48px_1fr] gap-x-3 gap-y-1 text-xs print:text-sm">
           <span className="text-slate-500">From</span>
