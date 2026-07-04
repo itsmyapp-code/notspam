@@ -32,7 +32,7 @@ interface EmailContent {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const API_BASE = 'https://www.1secmail.com/api/v1/'
+const API_BASE = '/api/secmail'
 const POLL_INTERVAL_MS = 10_000
 const ADDRESS_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789'
 const ADDRESS_LENGTH = 10
@@ -207,7 +207,7 @@ export default function CleanRoomPage() {
 
   const copyAddress = useCallback(() => {
     if (!localPart) return
-    navigator.clipboard.writeText(`${localPart}@notspam.uk`)
+    navigator.clipboard.writeText(`${localPart}@1secmail.com`)
       .then(() => { setCopyFeedback(true); setTimeout(() => setCopyFeedback(false), 2000) })
       .catch(() => setError('Could not access clipboard.'))
   }, [localPart])
@@ -311,7 +311,7 @@ export default function CleanRoomPage() {
           <span className="truncate" style={{ color: 'var(--color-cyan)' }}>{selectedMessage.from}</span>
           <span style={{ color: 'var(--color-text-muted)' }}>To</span>
           <span className="truncate" style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-jetbrains), monospace' }}>
-            {localPart}@notspam.uk
+            {localPart}@1secmail.com
           </span>
           <span style={{ color: 'var(--color-text-muted)' }}>Date</span>
           <span style={{ color: 'var(--color-text-secondary)' }}>{formatDate(selectedMessage.date)}</span>
@@ -352,10 +352,10 @@ export default function CleanRoomPage() {
 
   return (
     <div
-      className="min-h-screen flex flex-col"
-      style={{ background: 'var(--color-bg-base)', padding: '12px' }}
+      className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 lg:p-12"
+      style={{ background: 'var(--color-bg-base)' }}
     >
-      <div className="flex flex-col gap-3 w-full max-w-[1400px] mx-auto flex-1 min-h-0" style={{ height: 'calc(100vh - 24px)' }}>
+      <div className="flex flex-col gap-4 w-full max-w-[1200px] flex-1 max-h-[900px] h-full">
 
         {/* ── HEADER CARD ────────────────────────────────────────────────── */}
         <header
@@ -428,10 +428,10 @@ export default function CleanRoomPage() {
                 id="active-address"
                 className="flex-1 text-base font-medium tracking-tight truncate"
                 style={{ fontFamily: 'var(--font-jetbrains), monospace' }}
-                aria-label={`Active address: ${displayLocal}@notspam.uk`}
+                aria-label={`Active address: ${displayLocal}@1secmail.com`}
               >
                 <span style={{ color: '#10b981' }}>{displayLocal}</span>
-                <span style={{ color: 'var(--color-text-muted)' }}>@notspam.uk</span>
+                <span style={{ color: 'var(--color-text-muted)' }}>@1secmail.com</span>
               </span>
               {/* Polling toggle pill */}
               <button
